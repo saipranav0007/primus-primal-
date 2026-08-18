@@ -1,6 +1,8 @@
 import express from 'express';
 import http from 'http';
 import cors from 'cors';
+import path from 'path';
+import fs from 'fs';
 import { config } from './config';
 import { initializeSocket } from './websocket/socketServer';
 import apiRouter from './routes';
@@ -38,6 +40,28 @@ app.get('/health', (req, res) => {
 
 // Mount API routes
 app.use('/api', apiRouter);
+
+// Serve Frontend static assets in unified deployment mode
+const possibleDistPaths = [
+  path.join(__dirname, '../../frontend/dist'),
+  path.join(__dirname, '../frontend/dist'),
+  path.join(process.cwd(), 'frontend/dist'),
+  path.join(process.cwd(), '../frontend/dist'),
+];
+
+const frontendDist = possibleDistPaths.find((p) => fs.existsSync(p));
+
+if (frontendDist) {
+  console.log(`🌐 [Static Assets] Serving frontend from: ${frontendDist}`);
+  app.use(express.static(frontendDist));
+
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/health')) {
+      return next();
+    }
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+}
 
 // Central error handler
 app.use(errorHandler);

@@ -10,9 +10,12 @@
     "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"cyan,magenta\" \"npm run dev:backend\" \"npm run dev:frontend\"",
     "build:backend": "cd backend && npm run build",
     "build:frontend": "cd frontend && npm run build",
-    "build": "npm run build:backend && npm run build:frontend",
+    "build": "npm run build:frontend && npm run build:backend",
     "seed": "cd backend && npx prisma db push && npx ts-node prisma/seed.ts",
-    "reset": "cd backend && npm run db:reset"
+    "reset": "cd backend && npm run db:reset",
+    "render:build": "npm install && cd frontend && npm install && npm run build && cd ../backend && npm install && npx prisma generate && npx prisma db push && npm run seed && npm run build",
+    "render:start": "cd backend && npm run start",
+    "start": "cd backend && npm run start"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
