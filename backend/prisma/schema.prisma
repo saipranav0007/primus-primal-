@@ -1,0 +1,310 @@
+// Prisma schema for PRIMAL Intelligent Warehouse Operations
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  role      String   @default("OPERATIONS_MANAGER") // OPERATIONS_MANAGER, SUPERVISOR, PICKER, PACKER, QC_INSPECTOR
+  avatar    String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model Warehouse {
+  id          String      @id @default(uuid())
+  code        String      @unique // WH-A, WH-B
+  name        String
+  location    String
+  address     String
+  capacity    Int         @default(10000)
+  createdAt   DateTime    @default(now())
+  zones       Zone[]
+  inventories Inventory[]
+  orders      Order[]
+}
+
+model Zone {
+  id          String      @id @default(uuid())
+  warehouseId String
+  warehouse   Warehouse   @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  code        String      // A, B, C, D, PACKING, DISPATCH
+  name        String
+  description String?
+  color       String      @default("#06B6D4")
+  capacity    Int         @default(2000)
+  racks       Rack[]
+  createdAt   DateTime    @default(now())
+}
+
+model Rack {
+  id          String            @id @default(uuid())
+  zoneId      String
+  zone        Zone              @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  code        String            @unique // A01, A02, A03, B01, etc.
+  posX        Float             @default(0)
+  posY        Float             @default(0)
+  posZ        Float             @default(0)
+  width       Float             @default(2.5)
+  height      Float             @default(4.0)
+  depth       Float             @default(1.2)
+  levels      Int               @default(4)
+  bays        Int               @default(3)
+  status      String            @default("HEALTHY") // HEALTHY, LOW, CRITICAL, OUT_OF_STOCK, ACTIVE_PICKING
+  locations   StorageLocation[]
+  exceptions  Exception[]
+  createdAt   DateTime          @default(now())
+}
+
+model StorageLocation {
+  id              String      @id @default(uuid())
+  rackId          String
+  rack            Rack        @relation(fields: [rackId], references: [id], onDelete: Cascade)
+  binCode         String      @unique // A01-L1-B1
+  level           Int         @default(1)
+  bay             Int         @default(1)
+  maxCapacity     Int         @default(100)
+  currentCapacity Int         @default(0)
+  posX            Float       @default(0)
+  posY            Float       @default(0)
+  posZ            Float       @default(0)
+  inventories     Inventory[]
+  createdAt       DateTime    @default(now())
+}
+
+model Product {
+  id                  String              @id @default(uuid())
+  sku                 String              @unique
+  name                String
+  description         String
+  category            String              // Consumer Electronics, Audio & Peripherals, Smart Home, Wearables, Computer Hardware
+  brand               String
+  price               Float               // Price in INR (₹)
+  cost                Float               // Cost in INR (₹)
+  image               String
+  rating              Float               @default(4.5)
+  supplier            String
+  reorderPoint        Int                 @default(20)
+  safetyStock         Int                 @default(10)
+  leadTimeDays        Int                 @default(5)
+  avgDailyDemand      Float               @default(6.5)
+  weightKg            Float               @default(0.5)
+  dimensions          String?             @default("20x15x8 cm")
+  inventories         Inventory[]
+  orderItems          OrderItem[]
+  movements           InventoryMovement[]
+  exceptions          Exception[]
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+}
+
+model Inventory {
+  id           String          @id @default(uuid())
+  productId    String
+  product      Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  locationId   String
+  location     StorageLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  warehouseId  String
+  warehouse    Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  quantity     Int             @default(0)
+  reserved     Int             @default(0)
+  available    Int             @default(0)
+  status       String          @default("HEALTHY") // HEALTHY, LOW_STOCK, CRITICAL, OUT_OF_STOCK, OVERSTOCK
+  batchNumber  String?
+  expiryDate   DateTime?
+  updatedAt    DateTime        @updatedAt
+  createdAt    DateTime        @default(now())
+}
+
+model InventoryMovement {
+  id              String   @id @default(uuid())
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sourceLocId     String?
+  destLocId       String?
+  quantity        Int
+  movementType    String   // INBOUND, PICK, TRANSFER, ADJUSTMENT, REORDER_RECEIPT, DAMAGED_WRITE_OFF
+  reason          String?
+  createdBy       String   @default("System Automated")
+  createdAt       DateTime @default(now())
+}
+
+model Order {
+  id                     String          @id @default(uuid())
+  orderNumber            String          @unique
+  customerName           String
+  customerEmail          String
+  customerCity           String
+  orderValue             Float           // in INR (₹)
+  shippingType           String          @default("STANDARD") // STANDARD, EXPRESS, SAME_DAY_PRIORITY
+  priorityScore          Int             @default(50)         // 0 - 100
+  priorityExplanation    String?         // JSON formatted breakdown
+  priorityOverride       Boolean         @default(false)
+  priorityOverrideReason String?
+  stage                  String          @default("CREATED")  // CREATED, PRIORITIZED, ALLOCATED, PICKING, PACKING, QC, READY, DISPATCHED
+  slaDeadline            DateTime
+  slaRisk                String          @default("LOW")      // LOW, MEDIUM, HIGH, BREACHED
+  assignedPicker         String?
+  warehouseId            String
+  warehouse              Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  items                  OrderItem[]
+  allocations            Allocation[]
+  pickingTasks           PickingTask[]
+  qualityChecks          QualityCheck[]
+  shipments              Shipment[]
+  exceptions             Exception[]
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+}
+
+model OrderItem {
+  id           String   @id @default(uuid())
+  orderId      String
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  requestedQty Int
+  allocatedQty Int      @default(0)
+  pickedQty    Int      @default(0)
+  packedQty    Int      @default(0)
+  unitPrice    Float
+}
+
+model Allocation {
+  id                String    @id @default(uuid())
+  orderId           String
+  order             Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  strategy          String    // FULL, PARTIAL, SPLIT, CROSS_WAREHOUSE, PRIORITY_RESERVATION, BACKORDER
+  status            String    @default("RECOMMENDED") // RECOMMENDED, APPROVED, MODIFIED, REJECTED
+  recommendedAction String
+  reason            String
+  allocatedQty      Int
+  remainingQty      Int       @default(0)
+  expectedImpact    String
+  confidenceScore   Int       @default(90) // percentage e.g. 94
+  affectedOrderIds  String?   // JSON array of strings
+  createdAt         DateTime  @default(now())
+  approvedAt        DateTime?
+}
+
+model PickingTask {
+  id                String    @id @default(uuid())
+  orderId           String
+  order             Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  pickerName        String?   @default("Aarav Sharma")
+  status            String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, DELAYED
+  priority          Int       @default(50)
+  baselineDistanceM Float     @default(428.0)
+  optimizedDistanceM Float    @default(295.0)
+  savingsPercent    Float     @default(31.0)
+  routeWaypoints    String?   // JSON array of 3D or 2D coordinates / rack sequences
+  currentStep       Int       @default(0)
+  totalSteps        Int       @default(4)
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
+}
+
+model PackingStation {
+  id                String   @id @default(uuid())
+  stationCode       String   @unique // P01, P02, P03, P04, P05
+  workerName        String
+  currentOrderNum   String?
+  queueDepth        Int      @default(0)
+  avgPackingTimeMin Float    @default(5.2)
+  status            String   @default("AVAILABLE") // AVAILABLE, PACKING, WAITING, MAINTENANCE, OVERLOADED
+  updatedAt         DateTime @updatedAt
+  createdAt         DateTime @default(now())
+}
+
+model QualityCheck {
+  id            String   @id @default(uuid())
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  inspectorName String   @default("Pooja Patel")
+  itemsVerified Boolean  @default(true)
+  damageFound   Boolean  @default(false)
+  wrongSkuFound Boolean  @default(false)
+  notes         String?
+  passed        Boolean  @default(true)
+  timestamp     DateTime @default(now())
+}
+
+model Exception {
+  id                   String    @id @default(uuid())
+  exceptionNumber      String    @unique
+  type                 String    // LOW_STOCK, OUT_OF_STOCK, DAMAGED_ITEM, MISSING_ITEM, WRONG_SKU, PICKING_DELAY, PACKING_DELAY, SLA_RISK, ALLOCATION_CONFLICT, WAREHOUSE_CONGESTION
+  severity             String    @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  status               String    @default("OPEN")   // OPEN, INVESTIGATING, ACTION_REQUIRED, RESOLVED
+  orderId              String?
+  order                Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  productId            String?
+  product              Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  rackId               String?
+  rack                 Rack?     @relation(fields: [rackId], references: [id], onDelete: SetNull)
+  stationCode          String?
+  description          String
+  impact               String
+  primalRecommendation String
+  confidenceScore      Int       @default(90)
+  resolutionNotes      String?
+  createdAt            DateTime  @default(now())
+  resolvedAt           DateTime?
+}
+
+model Shipment {
+  id                String    @id @default(uuid())
+  orderId           String
+  order             Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  trackingNumber    String    @unique
+  carrier           String    @default("DELHIVERY") // DELHIVERY, BLUEDART, DTDC, EXPRESS_CARGO
+  destinationCity   String
+  status            String    @default("READY") // READY, DISPATCHING, DISPATCHED, DELAYED, DELIVERED
+  dispatchTime      DateTime?
+  estimatedDelivery DateTime?
+  createdAt         DateTime  @default(now())
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  title     String
+  message   String
+  type      String   @default("INFO") // INFO, WARNING, CRITICAL, SUCCESS, RECOMMENDATION
+  category  String   @default("GENERAL") // STOCK, ORDER, SLA, EXCEPTION, BOTTLENECK, ALLOCATION
+  read      Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+}
+
+model ActivityLog {
+  id         String   @id @default(uuid())
+  action     String
+  entityType String   // ORDER, INVENTORY, ALLOCATION, PICKING, QC, EXCEPTION, SHIPMENT, DECISION
+  entityId   String?
+  details    String
+  userName   String?  @default("PRIMAL Engine")
+  timestamp  DateTime @default(now())
+}
+
+model DecisionRecommendation {
+  id              String    @id @default(uuid())
+  category        String    // SLA_OPTIMIZATION, INVENTORY_ALLOCATION, BOTTLENECK_RELIEF, REORDER_TRIGGER, WORKER_REBALANCE
+  problem         String
+  dataConsidered  String    // JSON string of metric key-values
+  decision        String
+  reason          String
+  expectedImpact  String
+  confidenceScore Int       @default(92)
+  status          String    @default("PENDING") // PENDING, APPROVED, EXECUTED, REJECTED
+  actionPayload   String?   // JSON string with parameters for 1-click execution
+  createdAt       DateTime  @default(now())
+  executedAt      DateTime?
+}
